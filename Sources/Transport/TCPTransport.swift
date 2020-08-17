@@ -35,24 +35,24 @@ public class TCPTransport: Transport {
     private weak var delegate: TransportEventClient?
     private var isRunning = false
     private var isTLS = false
-   
+
     deinit {
         disconnect()
     }
- 
+
     public var usingTLS: Bool {
         return self.isTLS
     }
-    
+
     public init(connection: NWConnection) {
         self.connection = connection
         start()
     }
-    
+
     public init() {
         //normal connection, will use the "connect" method below
     }
-    
+
     public func connect(url: URL, timeout: Double = 10, certificatePinning: CertificatePinning? = nil) {
         guard let parts = url.getParts() else {
             delegate?.connectionChanged(state: .failed(TCPTransportError.invalidRequest))
@@ -85,23 +85,23 @@ public class TCPTransport: Transport {
         connection = conn
         start()
     }
-    
+
     public func disconnect() {
         isRunning = false
         connection?.cancel()
         connection = nil
     }
-    
+
     public func register(delegate: TransportEventClient) {
         self.delegate = delegate
     }
-    
+
     public func write(data: Data, completion: @escaping ((Error?) -> ())) {
         connection?.send(content: data, completion: .contentProcessed { (error) in
             completion(error)
         })
     }
-    
+
     private func start() {
         guard let conn = connection else {
             return
@@ -110,8 +110,8 @@ public class TCPTransport: Transport {
             switch newState {
             case .ready:
                 self?.delegate?.connectionChanged(state: .connected)
-            case .waiting:
-                self?.delegate?.connectionChanged(state: .waiting)
+            case .waiting(let error):
+                self?.delegate?.connectionChanged(state: .waiting(error))
             case .cancelled:
                 self?.delegate?.connectionChanged(state: .cancelled)
             case .failed(let error):
@@ -122,20 +122,20 @@ public class TCPTransport: Transport {
                 break
             }
         }
-        
+
         conn.viabilityUpdateHandler = { [weak self] (isViable) in
             self?.delegate?.connectionChanged(state: .viability(isViable))
         }
-        
+
         conn.betterPathUpdateHandler = { [weak self] (isBetter) in
             self?.delegate?.connectionChanged(state: .shouldReconnect(isBetter))
         }
-        
+
         conn.start(queue: queue)
         isRunning = true
         readLoop()
     }
-    
+
     //readLoop keeps reading from the connection to get the latest content
     private func readLoop() {
         if !isRunning {
@@ -146,7 +146,7 @@ public class TCPTransport: Transport {
             if let data = data {
                 s.delegate?.connectionChanged(state: .receive(data))
             }
-            
+
             // Refer to https://developer.apple.com/documentation/network/implementing_netcat_with_network_framework
             if let context = context, context.isFinal, isComplete {
                 if let delegate = s.delegate {
@@ -158,7 +158,7 @@ public class TCPTransport: Transport {
                 }
                 return
             }
-            
+
             if error == nil {
                 s.readLoop()
             }
